@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QS Compliance MVP — Cap. 652 & Contract Audit</title>
+<style>
+  :root{
+    --bg:#f6f7fb; --card:#fff; --line:#dfe3ea; --text:#1f2937; --muted:#6b7280;
+    --accent:#0f766e; --danger:#b91c1c; --warn:#b45309; --ok:#15803d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);color:var(--text)}
+  header{padding:18px 22px;background:#0f172a;color:#fff}
+  header h1{margin:0;font-size:20px}
+  header p{margin:4px 0 0;color:#cbd5e1;font-size:13px}
+  nav{display:flex;gap:8px;flex-wrap:wrap;padding:12px 20px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+  nav button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:7px 12px;cursor:pointer;font-size:13px}
+  nav button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  main{max-width:1200px;margin:0 auto;padding:20px}
+  .tab{display:none}.tab.active{display:block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+  .card h2{margin:0 0 12px;font-size:16px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+  .kpi{border:1px solid var(--line);border-radius:12px;padding:14px;background:#fff}
+  .kpi .num{font-size:28px;font-weight:700;margin-top:6px}
+  .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:10px}
+  label{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+  input,select,textarea{width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;background:#fff;font:inherit}
+  textarea{min-height:90px;resize:vertical}
+  button{cursor:pointer;border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 12px;font:inherit}
+  button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button.danger{color:var(--danger);border-color:#fecaca}
+  button.small{padding:5px 8px;font-size:12px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;background:#fafafa}
+  .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:600;white-space:nowrap}
+  .badge.ok{background:#dcfce7;color:#166534}
+  .badge.warn{background:#fef3c7;color:#92400e}
+  .badge.danger{background:#fee2e2;color:#991b1b}
+  .badge.muted{background:#f3f4f6;color:#4b5563}
+  .small{font-size:12px;color:var(--muted)}
+  .actions{display:flex;gap:6px;flex-wrap:wrap}
+  .empty{padding:12px;color:var(--muted);font-size:13px}
+  pre{white-space:pre-wrap;background:#0f172a;color:#e2e8f0;padding:12px;border-radius:10px;font-size:12px;overflow:auto}
+</style>
+</head>
+<body>
+<header>
+  <h1>QS Compliance MVP</h1>
+  <p>Cap. 652 payment-response clock · time-bar filtering · VO audit · AI / drawing flags</p>
+</header>
+
+<nav id="nav">
+  <button data-tab="dashboard" class="active">Dashboard</button>
+  <button data-tab="project">Project / SCC</button>
+  <button data-tab="documents">Documents</button>
+  <button data-tab="payments">Payment Claims</button>
+  <button data-tab="claims">Time-Bar Claims</button>
+  <button data-tab="vos">VO Audit</button>
+  <button data-tab="ais">AI / Adjudication</button>
+  <button data-tab="drawings">Drawing Notes</button>
+</nav>
+
+<main>
+  <!-- DASHBOARD -->
+  <section id="dashboard" class="tab active">
+    <div class="card">
+      <h2>Compliance dashboard</h2>
+      <div id="dashboardKpis" class="grid"></div>
+    </div>
+    <div class="card">
+      <h2>Upcoming / overdue payment responses</h2>
+      <div id="dashboardPayments"></div>
+    </div>
+    <div class="card">
+      <h2>Flagged items</h2>
+      <div id="dashboardFlags"></div>
+    </div>
+  </section>
+
+  <!-- PROJECT -->
+  <section id="project" class="tab">
+    <div class="card">
+      <h2>Project & SCC settings</h2>
+      <form id="projectForm">
+        <div class="row">
+          <div><label>Project name</label><input id="projectName" placeholder="e.g. Kowloon Tower"></div>
+          <div><label>Contract sum (HK$)</label><input id="contractSum" type="number" step="0.01"></div>
+          <div><label>Contractual notice window (days)</label><input id="noticeWindowDays" type="number" value="28"></div>
+          <div><label>Payment response window (days)</label><input id="paymentResponseDays" type="number" value="30"></div>
+          <div><label>Service method</label><input id="serviceMethod" placeholder="e.g. email / hand delivery"></div>
+        </div>
+        <button class="primary" type="submit">Save settings</button>
+        <button type="button" id="loadSampleBtn">Load sample data</button>
+        <button type="button" id="clearAllBtn" class="danger">Clear all data</button>
+      </form>
+      <p class="small">Default 30-day payment-response window is a configurable prototype setting. Confirm against Cap. 652 and the contract before relying on it.</p>
+    </div>
+  </section>
+
+  <!-- DOCUMENTS -->
+  <section id="documents" class="tab">
+    <div class="card">
+      <h2>Document register / filing</h2>
+      <form id="docForm">
+        <div class="row">
+          <div><label>Title</label><input id="docTitle" required></div>
+          <div><label>Type</label>
+            <select id="docType">
+              <option>Contract</option><option>SCC</option><option>Cost document</option>
+              <option>Variation Order</option><option>Architect's Instruction</option>
+              <option>Drawing</option><option>Specification</option><option>Correspondence</option>
+            </select>
+          </div>
+          <div><label>Section / folder</label><input id="docSection" placeholder="e.g. Clause 20 / VO pack"></div>
+          <div><label>&nbsp;</label><label><input type="checkbox" id="docReviewed"> Reviewed</label></div>
+        </div>
+        <button class="primary" type="submit">Add document</button>
+      </form>
+      <div id="docsTable"></div>
+    </div>
+  </section>
+
+  <!-- PAYMENTS -->
+  <section id="payments" class="tab">
+    <div class="card">
+      <h2>Payment claims — Cap. 652 response clock</h2>
+      <form id="paymentForm">
+        <div class="row">
+          <div><label>Payment claim ref</label><input id="payRef" required placeholder="e.g. PC-012"></div>
+          <div><label>Date received</label><input id="payReceived" type="date" required></div>
+          <div><label>Amount (HK$)</label><input id="payAmount" type="number" step="0.01"></div>
+        </div>
+        <button class="primary" type="submit">Add payment claim</button>
+      </form>
+      <div id="paymentsTable"></div>
+    </div>
+  </section>
+
+  <!-- CLAIMS -->
+  <section id="claims" class="tab">
+    <div class="card">
+      <h2>Strict contractual audit — time-bar filter</h2>
+      <form id="claimForm">
+        <div class="row">
+          <div><label>Claim ref</label><input id="claimRef" required placeholder="e.g. EOT-004"></div>
+          <div><label>Event date</label><input id="claimEvent" type="date" required></div>
+          <div><label>Notice date</label><input id="claimNotice" type="date" required></div>
+          <div><label>Notice window (days, blank = project default)</label><input id="claimWindow" type="number"></div>
+          <div><label>Note</label><input id="claimNote" placeholder="Clause 20.1 / SCC ref"></div>
+        </div>
+        <button class="primary" type="submit">Add claim</button>
+      </form>
+      <div id="claimsTable"></div>
+    </div>
+  </section>
+
+  <!-- VOs -->
+  <section id="vos" class="tab">
+    <div class="card">
+      <h2>VO audit & double-count control</h2>
+      <form id="voForm">
+        <div class="row">
+          <div><label>VO no.</label><input id="voNo" required placeholder="e.g. VO-018"></div>
+          <div><label>Description</label><input id="voDesc" placeholder="e.g. additional screed"></div>
+          <div><label>Amount (HK$)</label><input id="voAmount" type="number" step="0.01"></div>
+          <div><label>AI / ref</label><input id="voAiRef" placeholder="e.g. AI-032"></div>
+          <div><label>&nbsp;</label><label><input type="checkbox" id="voReviewed"> Reviewed</label></div>
+        </div>
+        <button class="primary" type="submit">Add VO</button>
+      </form>
+      <div id="vosTable"></div>
+    </div>
+  </section>
+
+  <!-- AIS -->
+  <section id="ais" class="tab">
+    <div class="card">
+      <h2>AI / adjudication summary</h2>
+      <form id="aiForm">
+        <div class="row">
+          <div><label>AI / dispute title</label><input id="aiTitle" required placeholder="e.g. AI-045 bundled EOT"></div>
+        </div>
+        <label>Paste AI / correspondence text</label>
+        <textarea id="aiText" required placeholder="Paste Architect's Instruction, correspondence, or dispute narrative..."></textarea>
+        <div style="margin-top:10px"><button class="primary" type="submit">Summarise & save</button></div>
+      </form>
+      <div id="aiOutput" style="margin-top:12px"></div>
+      <div id="aiTable"></div>
+    </div>
+  </section>
+
+  <!-- DRAWINGS -->
+  <section id="drawings" class="tab">
+    <div class="card">
+      <h2>VO drawing / specification reading flags</h2>
+      <form id="drawingForm">
+        <div class="row">
+          <div><label>Drawing title / no.</label><input id="drawingTitle" required placeholder="e.g. A-101 Rev C"></div>
+        </div>
+        <label>Notes / specifications / correspondence extract</label>
+        <textarea id="drawingNotes" required placeholder="Paste drawing notes, specification clauses, or relevant correspondence..."></textarea>
+        <div style="margin-top:10px"><button class="primary" type="submit">Add drawing note</button></div>
+      </form>
+      <div id="drawingsTable"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+/* ------------------------- storage ------------------------- */
+const STORAGE_KEY = 'qs_mvp_v1';
+
+const emptyState = () => ({
+  project: {
+    name: '',
+    contractSum: '',
+    noticeWindowDays: 28,
+    paymentResponseDays: 30,
+    serviceMethod: ''
+  },
+  docs: [],
+  payments: [],
+  claims: [],
+  vos: [],
+  ais: [],
+  drawings: []
+});
+
+let state = loadState();
+
+function loadState(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw) return emptyState();
+    const parsed = JSON.parse(raw);
+    return {...emptyState(), ...parsed, project:{...emptyState().project, ...(parsed.project||{})}};
+  }catch(e){
+    console.warn('Load failed', e);
+    return emptyState();
+  }
+}
+
+function saveState(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+/* ------------------------- helpers ------------------------- */
+const uid = () => Math.random().toString(36).slice(2, 9);
+const escapeHtml = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({
+  '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+}[c]));
+const norm = (s) => String(s || '').trim().toLowerCase().replace(/\s+/g,' ');
+const money = (n) => (n === '' || n == null) ? '' : 'HK$' + Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+
+function parseDate(s){
+  if(!s) return null;
+  const d = new Date(s + 'T00:00:00');
+  return isNaN(d) ? null : d;
+}
+function toISODate(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+function todayDate(){
+  const d = new Date();
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+function todayISO(){ return toISODate(todayDate()); }
+function addDays(dateStr, days){
+  const d = parseDate(dateStr);
+  if(!d) return '';
+  d.setDate(d.getDate() + Number(days || 0));
+  return toISODate(d);
+}
+function daysBetween(a, b){
+  const d1 = parseDate(a), d2 = parseDate(b);
+  if(!d1 || !d2) return null;
+  return Math.round((d2 - d1) / 86400000);
+}
+
+/* ------------------------- navigation ------------------------- */
+function switchTab(id){
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.id === id));
+  document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === id));
+}
+
+/* ------------------------- render: project ------------------------- */
+function renderProject(){
+  document.getElementById('projectName').value = state.project.name || '';
+  document.getElementById('contractSum').value = state.project.contractSum || '';
+  document.getElementById('noticeWindowDays').value = state.project.noticeWindowDays ?? 28;
+  document.getElementById('paymentResponseDays').value = state.project.paymentResponseDays ?? 30;
+  document.getElementById('serviceMethod').value = state.project.serviceMethod || '';
+}
+
+/* ------------------------- render: dashboard ------------------------- */
+function paymentDue(p){
+  return addDays(p.receivedDate, state.project.paymentResponseDays ?? 30);
+}
+function paymentStatus(p){
+  if(p.status === 'Responded') return {label:'Responded', cls:'ok'};
+  const due = paymentDue(p);
+  if(!due) return {label:'No date', cls:'muted'};
+  const rem = daysBetween(todayISO(), due);
+  if(rem < 0) return {label:`LATE by ${Math.abs(rem)}d`, cls:'danger'};
+  if(rem <= 3) return {label:`Open — ${rem}d left`, cls:'warn'};
+  return {label:`Open — ${rem}d left`, cls:'muted'};
+}
+
+function claimStatus(c){
+  const win = c.windowDays || state.project.noticeWindowDays || 28;
+  const lag = daysBetween(c.eventDate, c.noticeDate);
+  if(lag == null) return {label:'Date missing', cls:'muted', lag};
+  if(lag > win) return {label:`Time-barred (${lag}d > ${win}d)`, cls:'danger', lag};
+  return {label:`Within notice (${lag}d)`, cls:'ok', lag};
+}
+
+function voDuplicate(v){
+  return state.vos.some(o => {
+    if(o.id === v.id) return false;
+    const sameNo = v.voNo && o.voNo && norm(o.voNo) === norm(v.voNo);
+    const sameDescAmount = norm(o.desc) && norm(o.desc) === norm(v.desc)
+      && String(o.amount) === String(v.amount);
+    return sameNo || sameDescAmount;
+  });
+}
+
+function renderDashboard(){
+  const openPayments = state.payments.filter(p => p.status !== 'Responded');
+  const overdue = openPayments.filter(p => {
+    const due = paymentDue(p);
+    return due && daysBetween(todayISO(), due) < 0;
+  });
+  const timeBarred = state.claims.filter(c => claimStatus(c).cls === 'danger');
+  const unreviewedVOs = state.vos.filter(v => !v.reviewed);
+  const flaggedVOs = state.vos.filter(v => voDuplicate(v));
+
+  document.getElementById('dashboardKpis').innerHTML = `
+    <div class="kpi"><div class="small">Open payment responses</div><div class="num">${openPayments.length}</div></div>
+    <div class="kpi"><div class="small">Overdue payment responses</div><div class="num">${overdue.length}</div></div>
+    <div class="kpi"><div class="small">Time-barred claims</div><div class="num">${timeBarred.length}</div></div>
+    <div class="kpi"><div class="small">Unreviewed VOs</div><div class="num">${unreviewedVOs.length}</div></div>
+    <div class="kpi"><div class="small">Potential VO duplicates</div><div class="num">${flaggedVOs.length}</div></div>
+  `;
+
+  const upcoming = openPayments
+    .map(p => {
+      const due = paymentDue(p);
+      const rem = due ? daysBetween(todayISO(), due) : null;
+      return {...p, due, rem};
+    })
+    .sort((a,b) => (a.rem ?? 9999) - (b.rem ?? 9999))
+    .slice(0, 6);
+
+  document.getElementById('dashboardPayments').innerHTML = upcoming.length
+    ? `<table><thead><tr><th>Ref</th><th>Received</th><th>Response due</th><th>Status</th></tr></thead><tbody>
+      ${upcoming.map(p => {
+        const st = paymentStatus(p);
+        return `<tr><td>${escapeHtml(p.ref)}</td><td>${escapeHtml(p.receivedDate)}</td><td>${escapeHtml(p.due)}</td><td><span class="badge ${st.cls}">${escapeHtml(st.label)}</span></td></tr>`;
+      }).join('')}
+    </tbody></table>`
+    : `<div class="empty">No open payment claims.</div>`;
+
+  const flagRows = [];
+  timeBarred.forEach(c => flagRows.push(`<tr><td>Claim</td><td>${escapeHtml(c.ref)}</td><td><span class="badge danger">${escapeHtml(claimStatus(c).label)}</span></td></tr>`));
+  flaggedVOs.forEach(v => flagRows.push(`<tr><td>VO</td><td>${escapeHtml(v.voNo)} — ${escapeHtml(v.desc)}</td><td><span class="badge warn">Potential duplicate</span></td></tr>`));
+  unreviewedVOs.slice(0,5).forEach(v => flagRows.push(`<tr><td>VO</td><td>${escapeHtml(v.voNo)} — ${escapeHtml(v.desc)}</td><td><span class="badge muted">Unreviewed</span></td></tr>`));
+
+  document.getElementById('dashboardFlags').innerHTML = flagRows.length
+    ? `<table><thead><tr><th>Type</th><th>Item</th><th>Flag</th></tr></thead><tbody>${flagRows.join('')}</tbody></table>`
+    : `<div class="empty">No flagged items.</div>`;
+}
+
+/* ------------------------- render: documents ------------------------- */
+function renderDocs(){
+  const el = document.getElementById('docsTable');
+  if(!state.docs.length){ el.innerHTML = `<div class="empty">No documents filed.</div>`; return; }
+  el.innerHTML = `<table><thead><tr><th>Title</th><th>Type</th><th>Section</th><th>Reviewed</th><th></th></tr></thead><tbody>
+    ${state.docs.map(d => `<tr>
+      <td>${escapeHtml(d.title)}</td>
+      <td>${escapeHtml(d.type)}</td>
+      <td>${escapeHtml(d.section)}</td>
+      <td><span class="badge ${d.reviewed?'ok':'muted'}">${d.reviewed?'Yes':'No'}</span></td>
+      <td class="actions">
+        <button class="small" data-action="toggle-doc" data-id="${d.id}">${d.reviewed?'Unmark':'Mark reviewed'}</button>
+        <button class="small danger" data-action="delete-doc" data-id="${d.id}">Delete</button>
+      </td>
+    </tr>`).join('')}
+  </tbody></table>`;
+}
+
+/* ------------------------- render: payments ------------------------- */
+function renderPayments(){
+  const el = document.getElementById('paymentsTable');
+  if(!state.payments.length){ el.innerHTML = `<div class="empty">No payment claims.</div>`; return; }
+  el.innerHTML = `<table><thead><tr><th>Ref</th><th>Received</th><th>Response due</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>
+    ${state.payments.map(p => {
+      const st = paymentStatus(p);
+      return `<tr>
+        <td>${escapeHtml(p.ref)}</td>
+        <td>${escapeHtml(p.receivedDate)}</td>
+        <td>${escapeHtml(paymentDue(p))}</td>
+        <td>${escapeHtml(money(p.amount))}</td>
+        <td><span class="badge ${st.cls}">${escapeHtml(st.label)}</span></td>
+        <td class="actions">
+          ${p.status !== 'Responded' ? `<button class="small" data-action="respond-payment" data-id="${p.id}">Mark responded</button>` : ''}
+          <button class="small danger" data-action="delete-payment" data-id="${p.id}">Delete</button>
+        </td>
+      </tr>`;
+    }).join('')}
+  </tbody></table>`;
+}
+
+/* ------------------------- render: claims ------------------------- */
+function renderClaims(){
+  const el = document.getElementById('claimsTable');
+  if(!state.claims.length){ el.innerHTML = `<div class="empty">No claims.</div>`; return; }
+  el.innerHTML = `<table><thead><tr><th>Ref</th><th>Event</th><th>Notice</th><th>Lag</th><th>Window</th><th>Status</th><th></th></tr></thead><tbody>
+    ${state.claims.map(c => {
+      const st = claimStatus(c);
+      const win = c.windowDays || state.project.noticeWindowDays || 28;
+      return `<tr>
+        <td>${escapeHtml(c.ref)}</td>
+        <td>${escapeHtml(c.eventDate)}</td>
+        <td>${escapeHtml(c.noticeDate)}</td>
+        <td>${st.lag ?? ''}d</td>
+        <td>${win}d</td>
+        <td><span class="badge ${st.cls}">${escapeHtml(st.label)}</span></td>
+        <td><button class="small danger" data-action="delete-claim" data-id="${c.id}">Delete</button></td>
+      </tr>`;
+    }).join('')}
+  </tbody></table>`;
+}
+
+/* ------------------------- render: VOs ------------------------- */
+function renderVOs(){
+  const el = document.getElementById('vosTable');
+  if(!state.vos.length){ el.innerHTML = `<div class="empty">No VOs.</div>`; return; }
+  el.innerHTML = `<table><thead><tr><th>VO no.</th><th>Description</th><th>Amount</th><th>AI ref</th><th>Reviewed</th><th>Flag</th><th></th></tr></thead><tbody>
+    ${state.vos.map(v => {
+      const dup = voDuplicate(v);
+      return `<tr>
+        <td>${escapeHtml(v.voNo)}</td>
+        <td>${escapeHtml(v.desc)}</td>
+        <td>${escapeHtml(money(v.amount))}</td>
+        <td>${escapeHtml(v.aiRef)}</td>
+        <td><span class="badge ${v.reviewed?'ok':'muted'}">${v.reviewed?'Yes':'No'}</span></td>
+        <td>${dup?'<span class="badge warn">Potential duplicate</span>':'<span class="badge ok">Clear</span>'}</td>
+        <td class="actions">
+          <button class="small" data-action="toggle-vo" data-id="${v.id}">${v.reviewed?'Unmark':'Mark reviewed'}</button>
+          <button class="small danger" data-action="delete-vo" data-id="${v.id}">Delete</button>
+        </td>
+      </tr>`;
+    }).join('')}
+  </tbody></table>`;
+}
+
+/* ------------------------- render: AIs ------------------------- */
+function renderAIs(){
+  const el = document.getElementById('aiTable');
+  if(!state.ais.length){ el.innerHTML = `<div class="empty">No AI summaries saved.</div>`; return; }
+  el.innerHTML = `<table><thead><tr><th>Title</th><th>Summary</th><th>Created</th><th></th></tr></thead><tbody>
+    ${state.ais.map(a => `<tr>
+      <td>${escapeHtml(a.title)}</td>
+      <td><pre style="margin:0;max-height:160px">${escapeHtml(a.summary)}</pre></td>
+      <td>${escapeHtml(a.createdAt)}</td>
+      <td><button class="small danger" data-action="delete-ai" data-id="${a.id}">Delete</button></td>
+    </tr>`).join('')}
+  </tbody></table>`;
+}
+
+/* ------------------------- render: drawings ------------------------- */
+const DRAWING_FLAGS = ['variation','vo','eot','extension of time','instruction','delay','cost','payment','clause','time-bar','notice'];
+function drawingFlags(text){
+  return DRAWING_FLAGS.filter(w => new RegExp(w, 'i').test(text || ''));
+}
+
+function renderDrawings(){
+  const el = document.getElementById('drawingsTable');
+  if(!state.drawings.length){ el.innerHTML = `<div class="empty">No drawing notes.</div>`; return; }
+  el.innerHTML = `<table><thead><tr><th>Drawing</th><th>Notes</th><th>Flags</th><th></th></tr></thead><tbody>
+    ${state.drawings.map(d => {
+      const flags = drawingFlags(d.notes);
+      return `<tr>
+        <td>${escapeHtml(d.title)}</td>
+        <td>${escapeHtml(d.notes)}</td>
+        <td>${flags.length ? flags.map(f=>`<span class="badge warn">${escapeHtml(f)}</span>`).join(' ') : '<span class="badge ok">No keyword flags</span>'}</td>
+        <td><button class="small danger" data-action="delete-drawing" data-id="${d.id}">Delete</button></td>
+      </tr>`;
+    }).join('')}
+  </tbody></table>`;
+}
+
+/* ------------------------- AI summariser ------------------------- */
+function summariseText(text){
+  const refs = [...text.matchAll(/\b(?:AI|VO|EOT|Ref|Clause|SCC)[\s#:.-]*([A-Z0-9][A-Z0-9\/.-]*)/gi)]
+    .map(m => m[0].trim())
+    .slice(0, 20);
+  const dates = [...new Set(text.match(/\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}[\/.-]\d{1,2}[\/.-]\d{2,4}\b/g) || [])].slice(0, 20);
+  const amounts = [...new Set(text.match(/(?:HK\$|\$)\s?[\d,]+(?:\.\d{2})?/g) || [])].slice(0, 20);
+  const keywords = ['variation','EOT','extension of time','delay','instruction','payment','clause','time-bar','notice','adjudication']
+    .filter(k => new RegExp(k, 'i').test(text));
+
+  return [
+    'PROTOTYPE SUMMARY — verify against source documents and legal advice.',
+    '',
+    'References detected:',
+    refs.length ? refs.map(r => '• ' + r).join('\n') : '• None detected',
+    '',
+    'Dates detected:',
+    dates.length ? dates.map(d => '• ' + d).join('\n') : '• None detected',
+    '',
+    'Amounts detected:',
+    amounts.length ? amounts.map(a => '• ' + a).join('\n') : '• None detected',
+    '',
+    'Keywords / issues:',
+    keywords.length ? keywords.map(k => '• ' + k).join('\n') : '• None detected',
+    '',
+    'Suggested contractual breakdown:',
+    '1. Identify the instruction/event and relevant SCC clause.',
+    '2. Check notice date against the contractual time-bar window.',
+    '3. Separate EOT entitlement, prolongation cost, and variation valuation.',
+    '4. Cross-check against prior VOs / AIs to avoid double counting.',
+    '5. Confirm payment response deadline and evidence of service.'
+  ].join('\n');
+}
+
+/* ------------------------- render all ------------------------- */
+function renderAll(){
+  renderProject();
+  renderDashboard();
+  renderDocs();
+  renderPayments();
+  renderClaims();
+  renderVOs();
+  renderAIs();
+  renderDrawings();
+}
+
+/* ------------------------- events ------------------------- */
+function bindEvents(){
+  document.querySelectorAll('#nav button').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+
+  document.getElementById('projectForm').addEventListener('submit', e => {
+    e.preventDefault();
+    state.project = {
+      name: document.getElementById('projectName').value.trim(),
+      contractSum: document.getElementById('contractSum').value,
+      noticeWindowDays: Number(document.getElementById('noticeWindowDays').value || 28),
+      paymentResponseDays: Number(document.getElementById('paymentResponseDays').value || 30),
+      serviceMethod: document.getElementById('serviceMethod').value.trim()
+    };
+    saveState(); renderAll();
+  });
+
+  document.getElementById('loadSampleBtn').addEventListener('click', () => {
+    const t = todayISO();
+    state = {
+      project: {
+        name: 'Sample Kowloon Project',
+        contractSum: 120000000,
+        noticeWindowDays: 28,
+        paymentResponseDays: 30,
+        serviceMethod: 'Email to PM'
+      },
+      docs: [
+        {id:uid(), title:'Main Contract', type:'Contract', section:'Contract', reviewed:true},
+        {id:uid(), title:'Special Conditions of Contract', type:'SCC', section:'SCC / Clause 20', reviewed:false}
+      ],
+      payments: [
+        {id:uid(), ref:'PC-012', receivedDate:addDays(t,-25), amount:3500000, status:'Open'},
+        {id:uid(), ref:'PC-013', receivedDate:addDays(t,-35), amount:1200000, status:'Open'}
+      ],
+      claims: [
+        {id:uid(), ref:'EOT-004', eventDate:addDays(t,-60), noticeDate:addDays(t,-20), windowDays:28, note:'Clause 20.1'},
+        {id:uid(), ref:'EOT-005', eventDate:addDays(t,-40), noticeDate:addDays(t,-10), windowDays:28, note:'SCC 20'}
+      ],
+      vos: [
+        {id:uid(), voNo:'VO-018', desc:'Additional screed to Level 3', amount:250000, aiRef:'AI-032', reviewed:false},
+        {id:uid(), voNo:'VO-019', desc:'Additional screed to Level 3', amount:250000, aiRef:'AI-033', reviewed:false}
+      ],
+      ais: [],
+      drawings: [
+        {id:uid(), title:'A-101 Rev C', notes:'Note: additional screed required; possible variation and EOT implication. Confirm instruction and clause 20 notice.'}
+      ]
+    };
+    saveState(); renderAll();
+  });
+
+  document.getElementById('clearAllBtn').addEventListener('click', () => {
+    if(confirm('Clear all local data?')){
+      state = emptyState();
+      saveState(); renderAll();
+    }
+  });
+
+  document.getElementById('docForm').addEventListener('submit', e => {
+    e.preventDefault();
+    state.docs.push({
+      id: uid(),
+      title: document.getElementById('docTitle').value.trim(),
+      type: document.getElementById('docType').value,
+      section: document.getElementById('docSection').value.trim(),
+      reviewed: document.getElementById('docReviewed').checked
+    });
+    e.target.reset();
+    saveState(); renderAll();
+  });
+
+  document.getElementById('paymentForm').addEventListener('submit', e => {
+    e.preventDefault();
+    state.payments.push({
+      id: uid(),
+      ref: document.getElementById('payRef').value.trim(),
+      receivedDate: document.getElementById('payReceived').value,
+      amount: document.getElementById('payAmount').value,
+      status: 'Open'
+    });
+    e.target.reset();
+    saveState(); renderAll();
+  });
+
+  document.getElementById('claimForm').addEventListener('submit', e => {
+    e.preventDefault();
+    state.claims.push({
+      id: uid(),
+      ref: document.getElementById('claimRef').value.trim(),
+      eventDate: document.getElementById('claimEvent').value,
+      noticeDate: document.getElementById('claimNotice').value,
+      windowDays: document.getElementById('claimWindow').value ? Number(document.getElementById('claimWindow').value) : null,
+      note: document.getElementById('claimNote').value.trim()
+    });
+    e.target.reset();
+    saveState(); renderAll();
+  });
+
+  document.getElementById('voForm').addEventListener('submit', e => {
+    e.preventDefault();
+    state.vos.push({
+      id: uid(),
+      voNo: document.getElementById('voNo').value.trim(),
+      desc: document.getElementById('voDesc').value.trim(),
+      amount: document.getElementById('voAmount').value,
+      aiRef: document.getElementById('voAiRef').value.trim(),
+      reviewed: document.getElementById('voReviewed').checked
+    });
+    e.target.reset();
+    saveState(); renderAll();
+  });
+
+  document.getElementById('aiForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const text = document.getElementById('aiText').value;
+    const summary = summariseText(text);
+    state.ais.push({
+      id: uid(),
+      title: document.getElementById('aiTitle').value.trim(),
+      summary,
+      createdAt: todayISO()
+    });
+    document.getElementById('aiOutput').innerHTML = `<pre>${escapeHtml(summary)}</pre>`;
+    e.target.reset();
+    saveState(); renderAll();
+  });
+
+  document.getElementById('drawingForm').addEventListener('submit', e => {
+    e.preventDefault();
+    state.drawings.push({
+      id: uid(),
+      title: document.getElementById('drawingTitle').value.trim(),
+      notes: document.getElementById('drawingNotes').value.trim()
+    });
+    e.target.reset();
+    saveState(); renderAll();
+  });
+
+  document.body.addEventListener('click', e => {
+    const action = e.target.dataset.action;
+    const id = e.target.dataset.id;
+    if(!action || !id) return;
+
+    if(action === 'delete-doc') state.docs = state.docs.filter(x => x.id !== id);
+    if(action === 'toggle-doc') state.docs = state.docs.map(x => x.id === id ? {...x, reviewed:!x.reviewed} : x);
+    if(action === 'delete-payment') state.payments = state.payments.filter(x => x.id !== id);
+    if(action === 'respond-payment') state.payments = state.payments.map(x => x.id === id ? {...x, status:'Responded', responseDate:todayISO()} : x);
+    if(action === 'delete-claim') state.claims = state.claims.filter(x => x.id !== id);
+    if(action === 'delete-vo') state.vos = state.vos.filter(x => x.id !== id);
+    if(action === 'toggle-vo') state.vos = state.vos.map(x => x.id === id ? {...x, reviewed:!x.reviewed} : x);
+    if(action === 'delete-ai') state.ais = state.ais.filter(x => x.id !== id);
+    if(action === 'delete-drawing') state.drawings = state.drawings.filter(x => x.id !== id);
+
+    saveState(); renderAll();
+  });
+}
+
+/* ------------------------- init ------------------------- */
+bindEvents();
+renderAll();
+</script>
+</body>
+</html>

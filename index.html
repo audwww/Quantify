@@ -176,7 +176,7 @@ const TABS = [
   { key: 'overview', label: '1. Project Overview' },
   { key: 'doc', label: '2. Documents & OCR' },
   { key: 'dates', label: '3. Key Dates & Clauses' },
-  { key: 'vo', label: '4. VO & SOP Timer / Organizer' },
+  { key: 'vo', label: '4. VO / AI & SOP Timer' },
   { key: 'check', label: '5. GCC/SCC & Calculator' }
 ];
 
@@ -841,51 +841,146 @@ function sopStatus(vo, period) {
   return { label: ok ? 'Compliant' : 'Overdue', cls: ok ? 'emerald' : 'rose', detail: `${days} days after issue (limit ${period}d)` };
 }
 
+function classifyVOItem(item) {
+  if (!item || typeof item !== 'object') return 'VO';
+  const explicit = String(item.type || '').toUpperCase().trim();
+  if (explicit === 'AI' || explicit === 'VO') return explicit;
+
+  const hay = [
+    item.vo_number,
+    item.source_file,
+    item.title,
+    item.status,
+    item.amount
+  ].map(v => String(v || '').toUpperCase()).join(' ');
+
+  // Architect's Instruction patterns
+  if (/\bAI[\s\-_#./]?\d|\bA\.?I\.?\s*(NO|NO\.|#|NUMBER)?|\bARCHITECT'?S?\s+INSTRUCTION|\bINSTRUCTION\s+(NO|NO\.|#)/i.test(hay)) {
+    return 'AI';
+  }
+  // Variation Order patterns
+  if (/\bVO[\s\-_#./]?\d|\bV\.?O\.?\s*(NO|NO\.|#|NUMBER)?|\bVARIATION\s+ORDER/i.test(hay)) {
+    return 'VO';
+  }
+  return 'VO';
+}
+
+function splitVOItems(items) {
+  const list = Array.isArray(items) ? items : [];
+  const vos = [];
+  const ais = [];
+  for (const item of list) {
+    if (classifyVOItem(item) === 'AI') ais.push(item);
+    else vos.push(item);
+  }
+  return { vos, ais };
+}
+
 function panelVO(p) {
   const a = p.analysis;
   if (!a) return noAnalysis();
-  const vos = a.vo_details || [];
+  const all = a.vo_details || [];
 
   return `<div class="space-y-6">
     <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
       <div class="flex flex-wrap items-end justify-between gap-4 mb-6">
         <div>
-          <h2 class="text-lg font-bold text-slate-800">VO &amp; SOP Timer</h2>
-          <p class="text-xs text-slate-500 mt-1">Indicative calculation only; check the applicable contract and legal requirements.</p>
+          <h2 class="text-lg font-bold text-slate-800">VO &amp; AI SOP Timer</h2>
+          <p class="text-xs text-slate-500 mt-1">Variation Orders and Architect's Instructions are shown separately. Indicative calculation only; check the applicable contract and legal requirements.</p>
         </div>
         <div>
           <label class="block text-[11px] font-bold text-slate-600 mb-1.5">Response period (days)</label>
           <input id="sopPeriod" type="number" min="1" value="${state.sopPeriod}" class="w-28 px-3 py-2 border border-slate-300 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-brand/30 focus:border-brand transition">
         </div>
       </div>
-      <div id="timerTable">${renderTimerTable(vos, state.sopPeriod)}</div>
+      <div id="timerTable">${renderTimerTable(all, state.sopPeriod)}</div>
     </div>
 
     <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-      <h2 class="text-lg font-bold text-slate-800 mb-4">VO Organizer</h2>
-      <div id="voOrganizer">${renderOrganizer(vos, state.sopPeriod)}</div>
+      <h2 class="text-lg font-bold text-slate-800 mb-4">VO &amp; AI Organizer</h2>
+      <div id="voOrganizer">${renderOrganizer(all, state.sopPeriod)}</div>
     </div>
   </div>`;
 }
 
-function renderTimerTable(vos, period) {
-  if (!vos.length) return emptyState('⏱️', 'No VO records', 'Run AI analysis to populate this table.');
+function renderTimerSection(title, items, period, emptyTitle, emptySub) {
+  if (!items.length) {
+    return `<div class="mb-6 last:mb-0">
+      <h3 class="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full ${title.includes('Architect') ? 'bg-purple-500' : 'bg-amber-500'}"></span>
+        ${esc(title)}
+        <span class="text-[11px] font-medium text-slate-400">(0)</span>
+      </h3>
+      ${emptyState('⏱️', emptyTitle, emptySub)}
+    </div>`;
+  }
 
-  return `<div class="overflow-x-auto rounded-xl border border-slate-200"><table class="w-full text-sm text-left"><thead class="bg-slate-50 text-[11px] uppercase text-slate-500"><tr><th class="py-3 px-4 font-bold">VO No.</th><th class="py-3 px-4 font-bold">Date Issued</th><th class="py-3 px-4 font-bold">Date Submitted</th><th class="py-3 px-4 font-bold">Source</th><th class="py-3 px-4 font-bold">Computation</th><th class="py-3 px-4 font-bold">Indicative Status</th></tr></thead><tbody class="divide-y divide-slate-100">${vos.map(vo => {
+  const rows = items.map(vo => {
     const status = sopStatus(vo, period);
-    return `<tr><td class="py-3 px-4 font-bold text-slate-800">${hl(vo.vo_number || '—')}</td><td class="py-3 px-4">${fmtDate(vo.date_issued)}</td><td class="py-3 px-4">${fmtDate(vo.date_submitted)}</td><td class="py-3 px-4 text-xs">${hl(vo.source_file || 'N/A')} p.${hl(vo.page || '—')}</td><td class="py-3 px-4 text-xs">${esc(status.detail)}</td><td class="py-3 px-4">${badge(status.label, status.cls)}</td></tr>`;
-  }).join('')}</tbody></table></div>`;
+    return `<tr>
+      <td class="py-3 px-4 font-bold text-slate-800">${hl(vo.vo_number || '—')}</td>
+      <td class="py-3 px-4">${fmtDate(vo.date_issued)}</td>
+      <td class="py-3 px-4">${fmtDate(vo.date_submitted)}</td>
+      <td class="py-3 px-4 text-xs">${hl(vo.source_file || 'N/A')} p.${hl(vo.page || '—')}</td>
+      <td class="py-3 px-4 text-xs">${esc(status.detail)}</td>
+      <td class="py-3 px-4">${badge(status.label, status.cls)}</td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="mb-6 last:mb-0">
+    <h3 class="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full ${title.includes('Architect') ? 'bg-purple-500' : 'bg-amber-500'}"></span>
+      ${esc(title)}
+      <span class="text-[11px] font-medium text-slate-400">(${items.length})</span>
+    </h3>
+    <div class="overflow-x-auto rounded-xl border border-slate-200">
+      <table class="w-full text-sm text-left">
+        <thead class="bg-slate-50 text-[11px] uppercase text-slate-500">
+          <tr>
+            <th class="py-3 px-4 font-bold">No.</th>
+            <th class="py-3 px-4 font-bold">Date Issued</th>
+            <th class="py-3 px-4 font-bold">Date Submitted</th>
+            <th class="py-3 px-4 font-bold">Source</th>
+            <th class="py-3 px-4 font-bold">Computation</th>
+            <th class="py-3 px-4 font-bold">Indicative Status</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">${rows}</tbody>
+      </table>
+    </div>
+  </div>`;
 }
 
-function renderOrganizer(vos, period) {
-  if (!vos.length) return emptyState('📑', 'No VOs found', 'The AI did not detect any Variation Orders.');
+function renderTimerTable(all, period) {
+  const { vos, ais } = splitVOItems(all);
+  if (!vos.length && !ais.length) {
+    return emptyState('⏱️', 'No VO / AI records', 'Run AI analysis to populate Variation Orders and Architect\'s Instructions.');
+  }
+  return renderTimerSection('Variation Orders (VO)', vos, period, 'No Variation Orders', 'No VOs were detected in the analysis.') +
+    renderTimerSection('Architect\'s Instructions (AI)', ais, period, 'No Architect\'s Instructions', 'No AIs were detected in the analysis.');
+}
 
-  return `<div class="space-y-4">${vos.map((vo, i) => {
+function renderOrganizerGroup(title, items, period, emptyTitle, emptySub) {
+  const isAI = title.includes('Architect');
+  if (!items.length) {
+    return `<div class="mb-8 last:mb-0">
+      <h3 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full ${isAI ? 'bg-purple-500' : 'bg-amber-500'}"></span>
+        ${esc(title)}
+        <span class="text-[11px] font-medium text-slate-400">(0)</span>
+      </h3>
+      ${emptyState('📑', emptyTitle, emptySub)}
+    </div>`;
+  }
+
+  const cards = items.map((vo, i) => {
     const status = sopStatus(vo, period);
+    const label = vo.vo_number || ((isAI ? 'AI ' : 'VO ') + (i + 1));
     return `<details class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden group">
       <summary class="flex items-center gap-4 p-5 cursor-pointer select-none hover:bg-slate-50 transition">
         <span class="chev text-slate-300 transition-transform text-xs group-hover:text-brand">▶</span>
-        <span class="font-bold text-base text-slate-800">${hl(vo.vo_number || ('VO ' + (i + 1)))}</span>
+        <span class="text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0 ${isAI ? TYPE_COLORS.AI : TYPE_COLORS.VO}">${isAI ? 'AI' : 'VO'}</span>
+        <span class="font-bold text-base text-slate-800">${hl(label)}</span>
         <span class="ml-auto text-base font-bold text-brand whitespace-nowrap text-right">${hl(voAmountLabel(vo) || '—')}</span>
         ${badge(status.label, status.cls)}
       </summary>
@@ -896,7 +991,25 @@ function renderOrganizer(vos, period) {
         <div><div class="text-[10px] font-bold uppercase text-slate-400 mb-1">Source</div><div class="font-medium text-slate-800">${hl(vo.source_file || '—')} p.${hl(vo.page || '—')}</div></div>
       </div>
     </details>`;
-  }).join('')}</div>`;
+  }).join('');
+
+  return `<div class="mb-8 last:mb-0">
+    <h3 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full ${isAI ? 'bg-purple-500' : 'bg-amber-500'}"></span>
+      ${esc(title)}
+      <span class="text-[11px] font-medium text-slate-400">(${items.length})</span>
+    </h3>
+    <div class="space-y-3">${cards}</div>
+  </div>`;
+}
+
+function renderOrganizer(all, period) {
+  const { vos, ais } = splitVOItems(all);
+  if (!vos.length && !ais.length) {
+    return emptyState('📑', 'No VOs or AIs found', 'The AI did not detect any Variation Orders or Architect\'s Instructions.');
+  }
+  return renderOrganizerGroup('Variation Orders (VO)', vos, period, 'No Variation Orders', 'No VOs were detected.') +
+    renderOrganizerGroup('Architect\'s Instructions (AI)', ais, period, 'No Architect\'s Instructions', 'No AIs were detected.');
 }
 
 function updateTimerTable() {
@@ -908,9 +1021,21 @@ function updateTimerTable() {
 
   const period = Math.max(1, parseInt(input.value, 10) || 30);
   state.sopPeriod = period;
-  const vos = p.analysis?.vo_details || [];
-  if (tableEl) tableEl.innerHTML = renderTimerTable(vos, period);
-  if (organizerEl) organizerEl.innerHTML = renderOrganizer(vos, period);
+  const all = p.analysis?.vo_details || [];
+  if (tableEl) tableEl.innerHTML = renderTimerTable(all, period);
+  if (organizerEl) organizerEl.innerHTML = renderOrganizer(all, period);
+}
+
+function changeTypeBadge(type) {
+  const t = String(type || 'OTHER').toUpperCase();
+  const map = {
+    ADD: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+    AMEND: 'bg-amber-100 text-amber-800 border-amber-200',
+    DELETE: 'bg-rose-100 text-rose-700 border-rose-200',
+    REPLACE: 'bg-indigo-100 text-indigo-700 border-indigo-200',
+    OTHER: 'bg-slate-100 text-slate-600 border-slate-200'
+  };
+  return `<span class="inline-flex items-center text-[10px] font-bold px-2 py-0.5 rounded-md border ${map[t] || map.OTHER}">${esc(t)}</span>`;
 }
 
 function panelCheck(p) {
@@ -918,13 +1043,55 @@ function panelCheck(p) {
   if (!a) return noAnalysis();
   const map = a.scc_gcc_mapping || [];
 
-  return `<div class="grid lg:grid-cols-2 gap-6">
-    <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-      <h2 class="text-lg font-bold text-slate-800 mb-4">SCC vs GCC Modifications</h2>
-      ${map.length ? `<div class="space-y-3 max-h-[600px] overflow-y-auto pr-2">${map.map(m => `<div class="border border-slate-200 rounded-xl p-4 flex gap-4 bg-white"><div class="flex flex-col gap-2 shrink-0 w-20"><div class="bg-brand-light/50 rounded p-2 text-center"><div class="text-[9px] font-bold text-slate-400">SCC</div><div class="text-sm font-bold text-brand">${hl(m.scc_ref || '—')}</div></div><div class="bg-slate-50 rounded p-2 text-center"><div class="text-[9px] font-bold text-slate-400">GCC</div><div class="text-sm font-bold text-slate-600">${hl(m.gcc_ref || '—')}</div></div></div><div class="flex-1"><p class="text-sm text-slate-700">${hl(m.change || '')}</p><p class="text-[10px] text-slate-400 mt-2">Source: ${hl(m.source_file || 'N/A')}</p></div></div>`).join('')}</div>` : emptyState('🔍', 'No modifications detected', 'The AI found no SCC overrides.') }
+  const mappingCards = map.length
+    ? `<div class="space-y-4 max-h-[720px] overflow-y-auto pr-2">${map.map(m => {
+        const gccRef = m.gcc_ref || m.scc_ref || '—';
+        const sccRef = m.scc_ref || m.gcc_ref || '—';
+        return `<div class="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-sm">
+          <div class="flex flex-wrap items-center gap-2 px-4 py-3 bg-slate-50 border-b border-slate-100">
+            <div class="flex items-center gap-2">
+              <span class="text-[9px] font-bold uppercase text-slate-400">GCC</span>
+              <span class="text-sm font-bold text-slate-800">${hl(gccRef)}</span>
+            </div>
+            <span class="text-slate-300">→</span>
+            <div class="flex items-center gap-2">
+              <span class="text-[9px] font-bold uppercase text-slate-400">SCC</span>
+              <span class="text-sm font-bold text-brand">${hl(sccRef)}</span>
+            </div>
+            ${changeTypeBadge(m.change_type)}
+            <span class="ml-auto text-[10px] text-slate-400">Source: ${hl(m.source_file || 'N/A')}${m.page ? ' p.' + hl(m.page) : ''}</span>
+          </div>
+          <div class="grid md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-slate-100">
+            <div class="p-4">
+              <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Original GCC clause</div>
+              ${m.gcc_text
+                ? `<p class="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">${hl(m.gcc_text)}</p>`
+                : `<p class="text-sm text-slate-400 italic">Original GCC text not found in uploaded documents. Upload the GCC and re-analyse to retrieve Clause ${esc(gccRef)}.</p>`}
+            </div>
+            <div class="p-4 bg-blue-50/40">
+              <div class="text-[10px] font-bold uppercase tracking-wider text-brand mb-2">SCC modification</div>
+              ${m.scc_text
+                ? `<p class="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">${hl(m.scc_text)}</p>`
+                : `<p class="text-sm text-slate-700 leading-relaxed">${hl(m.change || '—')}</p>`}
+              ${m.change && m.scc_text ? `<p class="text-xs text-slate-500 mt-3 border-t border-blue-100/80 pt-2"><span class="font-bold text-slate-600">Effect:</span> ${hl(m.change)}</p>` : ''}
+            </div>
+          </div>
+        </div>`;
+      }).join('')}</div>`
+    : emptyState('🔍', 'No modifications detected', 'The AI found no SCC overrides of GCC clauses. Upload both GCC and SCC, then re-analyse.');
+
+  return `<div class="grid lg:grid-cols-5 gap-6">
+    <div class="lg:col-span-3 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+      <div class="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <h2 class="text-lg font-bold text-slate-800">SCC vs GCC Modifications</h2>
+          <p class="text-xs text-slate-500 mt-1">Shows the original GCC clause (when found) next to the SCC change that references it.</p>
+        </div>
+      </div>
+      ${mappingCards}
     </div>
 
-    <div class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm h-fit">
+    <div class="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm h-fit">
       <h2 class="text-lg font-bold text-slate-800">Cap. 652 Timeline Calculator</h2>
       <p class="text-xs text-slate-500 mt-1">Indicative only; confirm the applicable response period and deadline. AI provides source-grounded QS decision support only. Final contractual, commercial and legal decisions remain subject to professional review.</p>
       <div class="space-y-4 my-5">
@@ -1161,6 +1328,14 @@ CRITICAL RULES:
 5. contract_sum must be a number only, for example HK$16,180,000. Never use words such as "Sixteen Million" and never include OCR fragments.
 6. For each source file, write its own document summary. Include the document date, omissions, additions, nett, and any star-rate or discount-factor remark when that file states them. Do not copy one file's summary onto another file.
 7. For each VO or AI valuation, fill additions, omissions and nett separately when the text states them, and also put a combined amount string: "Nett HK$…; Additions HK$…; Omissions HK$…".
+8. Strictly separate Variation Orders (VO) and Architect's Instructions (AI). Never mix them. For every item in vo_details set "type" to exactly "VO" or "AI". Use the document title, header, or explicit wording (e.g. "Variation Order", "VO No.", "Architect's Instruction", "AI No.") to decide. If the document is an Architect's Instruction put type "AI"; if it is a Variation Order put type "VO".
+9. For SCC vs GCC modifications: when the SCC amends, adds to, or replaces a GCC clause (e.g. "ADD the following to the end of clause 2.4(1)", "Amend clause 25", "Delete clause X"), you MUST:
+   - Set gcc_ref to the exact GCC clause number referenced (e.g. "2.4(1)", "2.4(3)", "25").
+   - Set scc_ref to the SCC reference or item label if available (otherwise use the same clause number).
+   - Set change_type to one of: "ADD", "AMEND", "DELETE", "REPLACE", "OTHER".
+   - Quote the SCC modification text in scc_text (the words being added or the amendment wording).
+   - If the GCC document text is present in the supplied chunks, retrieve and quote the original GCC clause wording in gcc_text. Prefer the full relevant sub-clause. If the original GCC text is not in the supplied text, set gcc_text to "" (do not invent it).
+   - Summarise the practical effect in change.
 
 REQUIRED JSON SCHEMA:
 {
@@ -1173,8 +1348,8 @@ REQUIRED JSON SCHEMA:
   "documents": [{"name": "string", "type": "GCC | SCC | VO | AI | Other", "summary": "string including date, omissions, additions, nett and discount remarks when present"}],
   "key_dates": [{"date": "YYYY-MM-DD", "event": "string", "source_file": "string", "page": "string", "title": "string"}],
   "key_clauses": [{"clause": "string", "text": "string", "impact": "string", "source_file": "string", "page": "string", "title": "string"}],
-  "vo_details": [{"vo_number": "string", "amount": "Nett HK$0; Additions HK$0; Omissions HK$0", "additions": "string", "omissions": "string", "nett": "string", "date_issued": "YYYY-MM-DD", "date_submitted": "YYYY-MM-DD", "status": "string", "sop_check": "Compliant | Overdue", "source_file": "string", "page": "string"}],
-  "scc_gcc_mapping": [{"scc_ref": "string", "gcc_ref": "string", "change": "string", "source_file": "string"}]
+  "vo_details": [{"type": "VO | AI", "vo_number": "string", "amount": "Nett HK$0; Additions HK$0; Omissions HK$0", "additions": "string", "omissions": "string", "nett": "string", "date_issued": "YYYY-MM-DD", "date_submitted": "YYYY-MM-DD", "status": "string", "sop_check": "Compliant | Overdue", "source_file": "string", "page": "string"}],
+  "scc_gcc_mapping": [{"scc_ref": "string", "gcc_ref": "string", "change_type": "ADD | AMEND | DELETE | REPLACE | OTHER", "change": "string", "scc_text": "string (SCC addition or amendment wording)", "gcc_text": "string (original GCC clause text if found in the documents, else empty)", "source_file": "string", "page": "string"}]
 }`;
 
 function normalizeEndpoint(url) {
@@ -1245,6 +1420,72 @@ function mergeBy(items, incoming, keyFn) {
   }
 }
 
+/** Try to pull the original GCC clause wording from uploaded GCC file text. */
+function extractGccClauseText(fullText, clauseRef) {
+  if (!fullText || !clauseRef) return '';
+  const ref = String(clauseRef).trim();
+  if (!ref) return '';
+
+  // Normalise references like 2.4(1), 2.4 (1), Clause 2.4(1)
+  const escaped = ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\(/g, '\\s*\\(\\s*').replace(/\\\)/g, '\\s*\\)');
+  const patterns = [
+    // "2.4(1) ...." until next numbered clause at similar level
+    new RegExp(
+      `(?:^|\\n)\\s*(?:Clause\\s+)?${escaped}\\s*[-–—:.)]?\\s*([\\s\\S]{20,1200}?)(?=\\n\\s*(?:Clause\\s+)?\\d+(?:\\.\\d+)*(?:\\s*\\(\\d+\\))?\\s*[-–—:.)]|\\n\\s*\\(\\d+\\)\\s+|$)`,
+      'i'
+    ),
+    // Fallback: shorter capture after the clause number
+    new RegExp(
+      `(?:Clause\\s+)?${escaped}\\s*[-–—:.)]?\\s*([^\\n]{15,500})`,
+      'i'
+    )
+  ];
+
+  for (const re of patterns) {
+    const m = fullText.match(re);
+    if (m && m[1]) {
+      const text = m[1].replace(/\s+/g, ' ').trim();
+      if (text.length > 15) return text.slice(0, 1500);
+    }
+  }
+  return '';
+}
+
+function isLikelyGccFile(file, docs) {
+  const name = String(file.name || '').toUpperCase();
+  if (/\bGCC\b|GENERAL\s+CONDITIONS/.test(name)) return true;
+  const doc = (docs || []).find(d => d.name === file.name || file.name.includes(d.name) || d.name.includes(file.name));
+  return doc && String(doc.type || '').toUpperCase() === 'GCC';
+}
+
+function enrichSccGccMapping(result, files) {
+  const map = result?.scc_gcc_mapping;
+  if (!Array.isArray(map) || !map.length) return;
+
+  const docs = result.documents || [];
+  const gccTexts = (files || [])
+    .filter(f => f.text && f.text.length > 50 && isLikelyGccFile(f, docs))
+    .map(f => f.text);
+
+  // Also try any file if no GCC-labelled file found
+  const searchPool = gccTexts.length
+    ? gccTexts
+    : (files || []).filter(f => f.text && f.text.length > 50).map(f => f.text);
+
+  for (const item of map) {
+    if (item.gcc_text && String(item.gcc_text).trim().length > 20) continue;
+    const ref = item.gcc_ref || item.scc_ref;
+    if (!ref) continue;
+    for (const text of searchPool) {
+      const found = extractGccClauseText(text, ref);
+      if (found) {
+        item.gcc_text = found;
+        break;
+      }
+    }
+  }
+}
+
 async function analyzeProject() {
   const p = currentProject();
   if (!p) return;
@@ -1307,11 +1548,14 @@ async function analyzeProject() {
         mergeBy(finalResult.key_clauses, chunkResult.key_clauses, item => `${item.clause || ''}|${item.text || ''}|${item.source_file || ''}|${item.page || ''}`);
         mergeBy(finalResult.vo_details, chunkResult.vo_details, item => {
           const identity = item.vo_number || '';
+          const kind = (item.type || classifyVOItem(item) || 'VO').toUpperCase();
           return identity
-            ? `${identity}|${item.source_file || ''}`
-            : `${item.date_issued || ''}|${item.amount || ''}|${item.source_file || ''}|${item.page || ''}`;
+            ? `${kind}|${identity}|${item.source_file || ''}`
+            : `${kind}|${item.date_issued || ''}|${item.amount || ''}|${item.source_file || ''}|${item.page || ''}`;
         });
-        mergeBy(finalResult.scc_gcc_mapping, chunkResult.scc_gcc_mapping, item => `${item.scc_ref || ''}|${item.gcc_ref || ''}|${item.source_file || ''}`);
+        mergeBy(finalResult.scc_gcc_mapping, chunkResult.scc_gcc_mapping, item => {
+          return `${item.gcc_ref || ''}|${item.scc_ref || ''}|${item.change_type || ''}|${item.source_file || ''}|${(item.scc_text || item.change || '').slice(0, 80)}`;
+        });
       } catch (error) {
         console.warn(`Failed to process chunk ${index + 1}`, error);
         failedChunks.push(index + 1);
@@ -1327,6 +1571,18 @@ async function analyzeProject() {
     if (finalResult.project_overview && finalResult.project_overview.contract_sum) {
       finalResult.project_overview.contract_sum = formatContractSum(finalResult.project_overview.contract_sum);
     }
+
+    // Ensure every VO/AI item has an explicit type for separation in the UI
+    if (Array.isArray(finalResult.vo_details)) {
+      for (const item of finalResult.vo_details) {
+        if (!item.type || (item.type !== 'VO' && item.type !== 'AI')) {
+          item.type = classifyVOItem(item);
+        }
+      }
+    }
+
+    // Fill missing original GCC clause text from uploaded GCC documents
+    enrichSccGccMapping(finalResult, p.files || []);
 
     p.analysis = finalResult;
     p.analyzedAt = Date.now();
